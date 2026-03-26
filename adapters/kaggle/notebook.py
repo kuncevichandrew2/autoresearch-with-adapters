@@ -22,8 +22,10 @@ subprocess.run([sys.executable, "-m", "pip", "install",
 
 print("\n=== Cloning repo ===")
 subprocess.run([
-    "git", "clone", "--branch", REPO_BRANCH, "--depth", "1", REPO_URL, ".",
+    "git", "clone", "--branch", REPO_BRANCH, "--depth", "1", REPO_URL, "repo",
 ], check=True)
+os.chdir("repo")
+sys.path.insert(0, os.getcwd())
 
 print("\n=== Preparing data ===")
 subprocess.run([sys.executable, "prepare.py", "--num-shards", "4"], check=True)
