@@ -22,6 +22,5 @@ dev/
 # Results file
 results.tsv
 
-# Environment files with secrets
+# Environment files with secrets (use .env.example as template)
 .env
-adapters/**/.env

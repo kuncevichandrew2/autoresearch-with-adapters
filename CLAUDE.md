@@ -20,18 +20,18 @@ git add train.py && git commit -m "expNNN: description"
 git push adapters autoresearch/mar26
 
 # 4. Push notebook to Kaggle
-KAGGLE_API_TOKEN=KGAT_229c3e774cda8080facedc39a8dd37fc kaggle kernels push -p adapters/kaggle/
+source .env && kaggle kernels push -p adapters/kaggle/
 
 # 5. Poll until complete (~10-15 min total: setup + 5 min train)
 for i in $(seq 1 30); do
-  STATUS=$(KAGGLE_API_TOKEN=KGAT_229c3e774cda8080facedc39a8dd37fc kaggle kernels status andrewk444/autoresearch-p100 2>&1)
+  STATUS=$(KAGGLE_API_TOKEN=$(grep KAGGLE_API_TOKEN .env | cut -d= -f2) kaggle kernels status andrewk444/autoresearch-p100 2>&1)
   echo "[$(date +%H:%M:%S)] $STATUS"
   echo "$STATUS" | grep -qiE "complete|error|cancel" && break
   sleep 30
 done
 
 # 6. Pull logs
-rm -rf /tmp/kout && KAGGLE_API_TOKEN=KGAT_229c3e774cda8080facedc39a8dd37fc kaggle kernels output andrewk444/autoresearch-p100 -p /tmp/kout
+rm -rf /tmp/kout && source .env && kaggle kernels output andrewk444/autoresearch-p100 -p /tmp/kout
 
 # 7. Parse result
 python3 -c "
@@ -64,8 +64,8 @@ echo -e "<commit7>\t<val_loss>\t<vram_gb>\t<keep|discard>\t<description>" >> res
 - **Kernel:** `andrewk444/autoresearch-p100` (P100 16GB, internet enabled)
 - **Kernel metadata:** `adapters/kaggle/kernel-metadata.json`
 - **Notebook:** `adapters/kaggle/notebook.py` — clones `autoresearch/mar26` branch from GitHub, runs `prepare.py` then `executor(open("train.py").read())`
-- **API token:** `KGAT_229c3e774cda8080facedc39a8dd37fc` (also in `adapters/kaggle/.env`)
-- **WandB project:** `autoresearch` (key in `adapters/kaggle/.env`)
+- **API token:** in root `.env` as `KAGGLE_API_TOKEN`
+- **WandB project:** `autoresearch` (key in root `.env` as `WANDB_API_KEY`)
 - **Branch pushed to Kaggle:** always `autoresearch/mar26` (hardcoded in `notebook.py`)
 
 ## P100 constraints and learnings

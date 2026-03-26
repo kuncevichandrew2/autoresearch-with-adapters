@@ -1,347 +1,211 @@
 # autoresearch
 
-Autonomous ML research system. An AI agent iterates on `train.py` to minimize `val_bpb` (validation bits per byte) within a fixed 5-minute training budget. Based on [karpathy/autoresearch](https://github.com/karpathy/autoresearch).
+Autonomous ML research system. An AI agent iterates on `train.py` to minimize `val_loss` (cross-entropy, nats/token) within a fixed 5-minute training budget. Based on [karpathy/autoresearch](https://github.com/karpathy/autoresearch).
 
-This fork adds:
-- **WandB integration** for experiment tracking
-- **Adapter system** for running on different GPU platforms (Kaggle P100, etc.)
-- **Experiment reports** saved per-run to `reports/`
-- **Simplified train.py** — vanilla GPT + AdamW baseline, multi-GPU compatibility
+**This fork adds:** WandB experiment tracking · Kaggle P100 adapter · per-experiment markdown reports · simplified vanilla GPT + AdamW baseline
 
-## Architecture Overview
+---
 
-```mermaid
-graph TB
-    subgraph "Human"
-        H[Researcher] -->|writes instructions| PM[program.md]
-    end
-
-    subgraph "AI Agent (Claude)"
-        PM -->|reads| AG[Agent]
-        AG -->|modifies| TR[train.py]
-        AG -->|runs| RUN["uv run train.py"]
-        AG -->|logs| RES[results.tsv]
-        AG -->|saves| RPT[reports/]
-        RUN -->|metrics| AG
-        RUN -->|wandb| WB[WandB Dashboard]
-    end
-
-    subgraph "Fixed Infrastructure"
-        PR[prepare.py] -->|tokenizer| RUN
-        PR -->|data| RUN
-        PR -->|evaluate_bpb| RUN
-    end
-
-    style TR fill:#ff9,stroke:#333
-    style PR fill:#9f9,stroke:#333
-    style PM fill:#9cf,stroke:#333
-```
-
-**Key principle:** exactly one mutable file — `train.py`. Everything else is fixed, ensuring fair experiment comparison.
-
-## Experiment Cycle
+## How it works
 
 ```mermaid
 flowchart LR
     A[Read train.py] --> B[Make a change]
-    B --> C[Git commit]
-    C --> D["Train 5 min"]
-    D --> E{val_bpb improved?}
-    E -->|Yes| F[keep commit]
+    B --> C[Git commit + push]
+    C --> D[Train 5 min on GPU]
+    D --> E{val_loss improved?}
+    E -->|Yes| F[keep]
     E -->|No| G[git reset]
-    E -->|Crash| H[debug + reset]
-    F --> I[Save report]
-    G --> I
-    H --> I
-    I --> A
+    F --> H[Save report]
+    G --> H
+    H --> A
 ```
 
-The agent runs in an infinite loop until manually stopped. Each experiment is logged in `results.tsv` and a report is saved to `reports/`.
+One mutable file — `train.py`. Everything else is fixed. The agent runs forever until you stop it.
 
-## Project Structure
+---
 
-```
-autoresearch/
-├── train.py            # Model + optimizer + training loop (AGENT MODIFIES)
-├── prepare.py          # Data, tokenizer, evaluation (READ-ONLY)
-├── program.md          # Agent instructions (HUMAN EDITS)
-├── pyproject.toml      # Dependencies
-├── analysis.ipynb      # Result analysis
-├── reports/            # Per-experiment markdown reports
-├── adapters/
-│   └── kaggle/         # Kaggle GPU adapter
-│       ├── adapter.py
-│       ├── notebook.py
-│       ├── kernel-metadata.json
-│       ├── .env        # API keys (git-ignored)
-│       └── DESCRIPTION.md
-└── progress.png
-```
+## Quick start
 
-| File | Purpose | Modified by |
-|------|---------|-------------|
-| `train.py` | GPT model + training | Agent |
-| `prepare.py` | Data + tokenizer + metric | Nobody |
-| `program.md` | Agent rules | Human |
+### Requirements
 
-## Quick Start
+- Python 3.10+
+- [uv](https://docs.astral.sh/uv/) package manager
+- NVIDIA GPU (local) **or** a Kaggle account (free P100/T4)
+- WandB account (optional, for experiment tracking)
 
-**Requirements:** Single NVIDIA GPU, Python 3.10+, [uv](https://docs.astral.sh/uv/).
+### 1. Clone and configure
 
 ```bash
-# Install dependencies
+git clone https://github.com/kuncevichandrew2/autoresearch-with-adapters
+cd autoresearch-with-adapters
+
+cp .env.example .env
+# Edit .env and fill in your keys (see Environment Variables below)
+```
+
+### 2. Install dependencies
+
+```bash
+# Installs all deps including wandb (requires CUDA GPU on Linux; skip on macOS)
 uv sync
+```
 
-# Download data and train tokenizer (one-time, ~2 min)
+### 3. Prepare data (one-time, ~5 min)
+
+Downloads training data and trains a BPE tokenizer:
+
+```bash
 uv run prepare.py
+```
 
-# Run a single training experiment (~5 min)
+Data is cached in `~/.cache/autoresearch/`. Re-running is safe (skips already downloaded shards).
+
+### 4. Run a single experiment
+
+```bash
 uv run train.py
 ```
 
-### Running the Agent
-
-```bash
-# Point Claude Code at the instructions
-claude -p program.md
-```
-
-The agent reads `program.md`, modifies `train.py`, trains, evaluates, and repeats.
-
-## Model Architecture
-
-Vanilla GPT transformer with standard components:
-
-```mermaid
-graph TD
-    subgraph "GPT Model"
-        IN[Token IDs] --> EMB["Token Embedding (wte)"]
-        EMB --> NORM0[RMS Norm]
-
-        subgraph "Transformer Block x N"
-            NORM0 --> ATT[Causal Self-Attention + RoPE]
-            ATT --> RES1[Residual Add]
-            RES1 --> MLP1["MLP: Linear -> GELU -> Linear"]
-            MLP1 --> RES2[Residual Add]
-        end
-
-        RES2 --> NORM1[Final RMS Norm]
-        NORM1 --> HEAD[LM Head]
-        HEAD --> LOGITS[Logits]
-    end
-```
-
-**Components:**
-- **Embedding** — standard token embedding with RMS normalization
-- **Attention** — multi-head causal self-attention with RoPE (Rotary Position Embeddings)
-- **MLP** — standard 4x expansion with GELU activation
-- **Flash Attention 3** on SM80+ GPUs, falls back to PyTorch SDPA on older GPUs
-- **RMS Norm** — used throughout instead of LayerNorm
-
-### Default Hyperparameters
-
-```python
-DEPTH = 8               # transformer layers
-ASPECT_RATIO = 64       # model_dim = depth * 64
-HEAD_DIM = 128          # attention head dimension
-TOTAL_BATCH_SIZE = 2**19  # ~524K tokens per step
-LEARNING_RATE = 3e-4
-WEIGHT_DECAY = 0.1
-WARMUP_RATIO = 0.05     # 5% warmup
-WARMDOWN_RATIO = 0.5    # 50% cosine decay
-DEVICE_BATCH_SIZE = 128
-```
-
-## Data Pipeline
-
-```mermaid
-flowchart TD
-    HF["HuggingFace Hub (climbmix-400b)"] -->|download| SH[Parquet shards]
-    SH -->|rustbpe| TOK["BPE Tokenizer (vocab_size=8192)"]
-    TOK --> CACHE["~/.cache/autoresearch/"]
-    SH --> CACHE
-
-    subgraph "Runtime: make_dataloader"
-        CACHE -->|read shards| DOCS[Documents]
-        DOCS -->|tokenize| TOKENS[Token sequences]
-        TOKENS -->|best-fit packing| BATCH["Batches [B, T]"]
-    end
-```
-
-| Constant | Value | Purpose |
-|----------|-------|---------|
-| `MAX_SEQ_LEN` | 2048 | Context length |
-| `TIME_BUDGET` | 300s | Training time (5 min) |
-| `EVAL_TOKENS` | ~21M | Validation tokens |
-| `VOCAB_SIZE` | 8192 | BPE vocabulary size |
-
-### Metric: Bits Per Byte (BPB)
-
-```
-BPB = total_nats / (ln(2) * total_bytes)
-```
-
-BPB is vocab-size-independent, allowing fair comparison across different tokenizer configurations.
-
-## Training Loop
-
-```mermaid
-sequenceDiagram
-    participant DL as DataLoader
-    participant M as Model
-    participant O as AdamW Optimizer
-    participant E as Evaluator
-
-    loop Every step (up to 5 minutes)
-        loop Gradient Accumulation
-            DL->>M: batch [B, T]
-            M->>M: forward (autocast)
-            M->>M: backward
-        end
-
-        O->>M: optimizer.step()
-
-        alt loss is NaN or > 100
-            M-->>M: exit(1) — fast fail
-        end
-    end
-
-    M->>E: eval mode
-    E->>E: evaluate_bpb on validation
-    E-->>M: val_bpb metric
-```
-
-- **Time-based LR schedule** — warmup -> constant -> cosine decay, tied to wall-clock progress
-- **GradScaler** — enabled automatically for fp16 (older GPUs), no-op for bf16
-- **Gradient clipping** — max_norm=1.0
-- **torch.compile** — enabled on SM70+ GPUs, skipped on older hardware
-- **Fast-fail** — training aborts on NaN or loss > 100
-
-## GPU Compatibility
-
-| GPU | Capability | Precision | torch.compile | Flash Attn | Notes |
-|-----|-----------|-----------|--------------|------------|-------|
-| H100 | SM90 | bf16 | Yes | FA3 | Reference platform |
-| A100 | SM80 | bf16 | Yes | FA3 | |
-| V100 | SM70 | fp16 + GradScaler | Yes | SDPA fallback | |
-| T4 | SM75 | fp16 + GradScaler | Yes | SDPA fallback | |
-| P100 | SM60 | fp16 + GradScaler | No | SDPA fallback | Requires torch 2.4.1+cu118 |
-
-Automatic detection: the script reads `torch.cuda.get_device_capability()` and adjusts precision, attention backend, and compilation accordingly.
-
-## WandB Integration
-
-Training metrics are logged to [Weights & Biases](https://wandb.ai/) when `WANDB_API_KEY` is set:
-
-- **Per-step** (every 10 steps): `train/loss`, `train/lr_multiplier`, `train/tokens_per_sec`, `train/mfu_percent`, `train/progress`
-- **Final summary**: `val_bpb`, `training_seconds`, `peak_vram_mb`, `mfu_percent`, `total_tokens_M`, `num_steps`, `num_params_M`
-
-Graceful fallback: if `wandb` is not installed or `WANDB_API_KEY` is not set, logging is silently skipped.
-
-```bash
-export WANDB_API_KEY=your_key
-export WANDB_PROJECT=autoresearch  # optional, defaults to "autoresearch"
-```
-
-## Adapters
-
-Adapters allow running autoresearch on different GPU platforms.
-
-### Kaggle P100
-
-The `adapters/kaggle/` directory contains everything needed to run on Kaggle's free P100 GPUs:
-
-1. Copy `.env.example` to `.env` and fill in your API keys
-2. Push the notebook to Kaggle:
-   ```bash
-   cd adapters/kaggle
-   kaggle kernels push
-   ```
-3. The notebook installs `torch==2.4.1+cu118` (P100 compatibility), embeds `prepare.py` and `train.py` via base64, and runs the full training pipeline.
-
-P100-specific tuning in the notebook: `DEPTH=6`, `DEVICE_BATCH_SIZE=16` to fit 16GB VRAM.
-
-## Output Format
-
-### Training log (overwritten via `\r`)
-
-```
-step 00150 (42.3%) | loss: 4.123456 | lrm: 1.00 | dt: 312ms | tok/sec: 1,680,000 | mfu: 45.2% | epoch: 1 | remaining: 173s
-```
-
-### Final summary (after training completes)
+Trains for 5 minutes, prints a summary block:
 
 ```
 ---
-val_bpb:          1.187432
-training_seconds: 300.1
-total_seconds:    342.5
-peak_vram_mb:     14230.8
-mfu_percent:      44.50
-total_tokens_M:   95.4
-num_steps:        182
-num_params_M:     46.2
-depth:            8
+val_loss:         5.129095
+training_seconds: 300.2
+total_seconds:    343.0
+peak_vram_mb:     6324.1
+mfu_percent:      28.03
+total_tokens_M:   11.6
+num_steps:        355
+num_params_M:     16.9
+depth:            6
 ```
 
-The agent parses the `---` summary block to extract `val_bpb` and decide whether to keep or discard the commit.
+### 5. Run the agent (autonomous loop)
 
-### Experiment Reports
+Point Claude Code at `program.md`:
 
-Each experiment generates a report in `reports/{N}_{timestamp}.md` with:
-- Hypothesis and changes
-- Metrics table (val_bpb, delta, VRAM, MFU, etc.)
-- Result verdict and notes
-
-### results.tsv
-
-```
-commit	val_bpb	memory_gb	status	description
-a1b2c3d	0.997900	44.0	keep	baseline
-b2c3d4e	0.993200	44.2	keep	increase LR to 0.04
-c3d4e5f	0.000000	0.0	crash	double model width (OOM)
+```bash
+claude  # then: "read program.md and start experimenting"
 ```
 
-## Full Data Flow
+The agent modifies `train.py`, runs training, checks `val_loss`, keeps or reverts, saves a report, and repeats.
 
-```mermaid
-flowchart TD
-    subgraph "Preparation (one-time)"
-        HF["HuggingFace (climbmix-400b)"] -->|download| SHARDS[Parquet shards]
-        SHARDS -->|train_tokenizer| BPE["BPE Tokenizer (8192 tokens)"]
-        BPE --> CACHE["~/.cache/autoresearch/"]
-        SHARDS --> CACHE
-    end
+---
 
-    subgraph "Experiment (5 minutes)"
-        CACHE -->|make_dataloader| BATCHES["Batches [B, T]"]
-        BATCHES -->|forward| GPT["GPT Model"]
-        GPT -->|loss| BACKWARD[Backward Pass]
-        BACKWARD -->|gradients| OPT[AdamW]
-        OPT -->|update| GPT
-        GPT -.->|metrics| WB[WandB]
-    end
+## Environment variables
 
-    subgraph "Evaluation"
-        GPT -->|eval mode| EVAL[evaluate_bpb]
-        EVAL -->|val_bpb| DECISION{Improved?}
-        DECISION -->|keep| COMMIT["Git Commit"]
-        DECISION -->|discard| RESET["Git Reset"]
-    end
+Copy `.env.example` to `.env` and fill in:
 
-    subgraph "Logging"
-        COMMIT --> TSV[results.tsv]
-        RESET --> TSV
-        TSV --> RPT["reports/*.md"]
-    end
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `KAGGLE_API_TOKEN` | For Kaggle adapter | From kaggle.com → Settings → API → Create New Token |
+| `WANDB_API_KEY` | Optional | From wandb.ai/authorize |
+| `WANDB_PROJECT` | Optional | WandB project name (default: `autoresearch`) |
+
+---
+
+## Running on Kaggle (free P100 GPU)
+
+No local GPU? Use the Kaggle adapter.
+
+### Setup (one-time)
+
+1. Fill in `.env` with your `KAGGLE_API_TOKEN` and `WANDB_API_KEY`
+2. In `adapters/kaggle/kernel-metadata.json`, set `"id"` to `"<your-kaggle-username>/autoresearch-p100"`
+3. Add `WANDB_API_KEY` as a Kaggle Secret: Kaggle → Notebook → Add-ons → Secrets
+
+### Experiment cycle
+
+```bash
+# 1. Modify train.py, commit, push to your GitHub branch
+git add train.py && git commit -m "expNNN: description"
+git push origin autoresearch/mar26
+
+# 2. Push notebook to Kaggle and run
+source .env
+kaggle kernels push -p adapters/kaggle/
+
+# 3. Poll for completion (~10-15 min total)
+for i in $(seq 1 30); do
+  STATUS=$(kaggle kernels status <your-username>/autoresearch-p100 2>&1)
+  echo "[$(date +%H:%M:%S)] $STATUS"
+  echo "$STATUS" | grep -qiE "complete|error|cancel" && break
+  sleep 30
+done
+
+# 4. Pull and parse results
+kaggle kernels output <your-username>/autoresearch-p100 -p /tmp/kout
+python3 -c "
+import json
+events = json.loads(open('/tmp/kout/autoresearch-p100.log').read())
+out = ''.join(e['data'] for e in events if e['stream_name']=='stdout')
+idx = out.find('---')
+print(out[idx:idx+300])
+"
 ```
 
-## Design Choices
+### P100-specific settings in train.py
 
-- **Single file to modify.** The agent only touches `train.py`. Diffs stay reviewable and experiments stay comparable.
-- **Fixed time budget.** Training always runs for exactly 5 minutes. This makes experiments comparable regardless of what the agent changes and finds the optimal model for your specific GPU.
-- **Self-contained.** No heavy frameworks. One GPU, one file, one metric.
-- **Adapter pattern.** Platform-specific setup lives in `adapters/`, keeping the core code clean.
+```python
+DEPTH = 6                  # smaller model = more optimizer steps in 5 min
+DEVICE_BATCH_SIZE = 16     # fits in 16GB VRAM
+TOTAL_BATCH_SIZE = 2**15   # grad_accum=1, ~355 steps per run
+LEARNING_RATE = 1e-3
+ADAM_BETAS = (0.9, 0.95)
+WARMDOWN_RATIO = 0.2
+```
+
+---
+
+## Project structure
+
+```
+autoresearch/
+├── train.py              # Model + optimizer + training loop  ← AGENT MODIFIES
+├── prepare.py            # Data, tokenizer, evaluation        ← READ-ONLY
+├── program.md            # Agent instructions                 ← HUMAN EDITS
+├── pyproject.toml        # Python dependencies
+├── .env.example          # Environment variable template
+├── CLAUDE.md             # Agent context (workflow, learnings)
+├── reports/              # Per-experiment markdown reports
+├── analysis.ipynb        # Result visualization
+└── adapters/
+    └── kaggle/
+        ├── notebook.py         # Kaggle script (clones repo, runs training)
+        ├── adapter.py          # Local helper (setup, prepare, train)
+        ├── kernel-metadata.json # Kaggle push config
+        └── DESCRIPTION.md
+```
+
+---
+
+## Model architecture
+
+Vanilla GPT transformer:
+
+- Token embedding → RMS Norm
+- N × [CausalSelfAttention (RoPE) + RMS Norm + MLP (GELU) + residuals]
+- Final RMS Norm → LM Head
+
+**GPU compatibility:** Flash Attention 3 on SM80+ (H100/A100), PyTorch SDPA fallback on older GPUs (P100/T4/V100). `fp16` + GradScaler on SM < 80, `bfloat16` otherwise. `torch.compile` on SM70+.
+
+---
+
+## WandB integration
+
+Set `WANDB_API_KEY` in `.env`. Per-step metrics logged every 10 steps; final summary logged at end of run.
+
+To disable: leave `WANDB_API_KEY` unset — logging is silently skipped.
+
+---
+
+## Metric: val_loss
+
+Cross-entropy loss in nats/token, evaluated on 100 validation batches after training. Lower is better. Vocab-size-independent.
+
+---
 
 ## License
 

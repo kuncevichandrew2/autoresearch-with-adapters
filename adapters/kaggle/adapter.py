@@ -15,8 +15,8 @@ def setup():
         "tiktoken>=0.11.0", "pyarrow>=21.0.0", "wandb>=0.19.0",
     ], check=True)
 
-    # Load .env if present
-    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    # Load .env from repo root if present
+    env_path = os.path.join(os.path.dirname(__file__), "../../.env")
     if os.path.exists(env_path):
         with open(env_path) as f:
             for line in f:

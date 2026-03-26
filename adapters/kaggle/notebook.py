@@ -1,14 +1,25 @@
 """
 Autoresearch P100 — Kaggle notebook.
 Clones the repo, installs deps, prepares data, runs train.py via executor.
+
+Setup: add WANDB_API_KEY as a Kaggle Secret (Notebook → Add-ons → Secrets).
+The REPO_URL and REPO_BRANCH below should point to your fork/branch.
 """
 import subprocess, sys, os, types
 
 REPO_URL    = "https://github.com/kuncevichandrew2/autoresearch-with-adapters"
 REPO_BRANCH = "autoresearch/mar26"
 
-os.environ["WANDB_API_KEY"] = "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"
-os.environ["WANDB_PROJECT"] = "autoresearch"
+# Read from Kaggle Secret (Add-ons → Secrets → WANDB_API_KEY)
+# If not set, WandB logging is silently skipped by train.py
+if "WANDB_API_KEY" not in os.environ:
+    try:
+        from kaggle_secrets import UserSecretsClient
+        os.environ["WANDB_API_KEY"] = UserSecretsClient().get_secret("WANDB_API_KEY")
+    except Exception:
+        pass
+
+os.environ.setdefault("WANDB_PROJECT", "autoresearch")
 
 print("=== Installing PyTorch 2.4.1+cu118 (P100 compatible) ===")
 subprocess.run([sys.executable, "-m", "pip", "install",
