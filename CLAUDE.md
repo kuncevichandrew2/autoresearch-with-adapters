@@ -59,6 +59,29 @@ git add train.py && git commit -m "revert expNNN: <reason>"
 echo -e "<commit7>\t<val_loss>\t<vram_gb>\t<keep|discard>\t<description>" >> results.tsv
 ```
 
+## Experiment workflow (RunPod)
+
+Alternative to Kaggle — use when you need a faster GPU (RTX 4090, A100) or Kaggle quota is exhausted.
+
+```bash
+# 1. Modify train.py, commit, push
+git add train.py && git commit -m "expNNN: description"
+git push adapters autoresearch/mar26
+
+# 2. Run adapter — creates pod, trains, prints result, terminates pod
+source .env
+python adapters/runpod/adapter.py
+
+# Optional: override GPU type
+python adapters/runpod/adapter.py --gpu "NVIDIA A100 80GB PCIe"
+```
+
+- Pod is created fresh each run (no persistent state)
+- Pod is always terminated after training (even on error)
+- GPU type configured in `adapters/runpod/pod-config.json`
+- `RUNPOD_API_KEY` must be in root `.env`
+- Install: `pip install runpod`
+
 ## Kaggle setup
 
 - **Kernel:** `andrewk444/autoresearch-p100` (P100 16GB, internet enabled)
