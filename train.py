@@ -199,8 +199,8 @@ class GPT(nn.Module):
 # Hyperparameters (edit these directly, no CLI flags needed)
 # ---------------------------------------------------------------------------
 
-DEPTH = 6               # number of transformer layers
-ASPECT_RATIO = 64       # model_dim = depth * ASPECT_RATIO
+DEPTH = 8               # increased from 6 (using spare VRAM: 6.2→~11GB)
+ASPECT_RATIO = 64       # model_dim = depth * ASPECT_RATIO = 512
 HEAD_DIM = 128          # target head dimension for attention
 TOTAL_BATCH_SIZE = 2**15  # ~32K tokens per step (grad_accum=1, ~370 steps on P100)
 LEARNING_RATE = 1e-3    # AdamW learning rate
