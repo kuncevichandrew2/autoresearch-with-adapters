@@ -199,7 +199,7 @@ class GPT(nn.Module):
 # Hyperparameters (edit these directly, no CLI flags needed)
 # ---------------------------------------------------------------------------
 
-DEPTH = 6               # number of transformer layers
+DEPTH = 4               # smaller model to maximize step count in the 5 min budget
 ASPECT_RATIO = 64       # model_dim = depth * ASPECT_RATIO
 HEAD_DIM = 128          # target head dimension for attention
 TOTAL_BATCH_SIZE = 2**15  # ~32K tokens per step (grad_accum=1, ~370 steps on P100)
