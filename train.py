@@ -202,12 +202,12 @@ class GPT(nn.Module):
 DEPTH = 6               # number of transformer layers
 ASPECT_RATIO = 64       # model_dim = depth * ASPECT_RATIO
 HEAD_DIM = 128          # target head dimension for attention
-TOTAL_BATCH_SIZE = 2**19  # ~524K tokens per optimizer step
+TOTAL_BATCH_SIZE = 2**17  # ~131K tokens per optimizer step (4x more steps on P100)
 LEARNING_RATE = 3e-4    # AdamW learning rate
 WEIGHT_DECAY = 0.1      # AdamW weight decay
 ADAM_BETAS = (0.9, 0.999)
 WARMUP_RATIO = 0.05     # fraction of time budget for LR warmup
-WARMDOWN_RATIO = 0.5    # fraction of time budget for LR warmdown
+WARMDOWN_RATIO = 0.2    # fraction of time budget for LR warmdown (was 0.5)
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 DEVICE_BATCH_SIZE = 16  # per-device batch size (reduce if OOM)
 
