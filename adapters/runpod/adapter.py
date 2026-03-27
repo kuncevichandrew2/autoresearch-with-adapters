@@ -72,9 +72,11 @@ def create_pod(config: dict, gpu_type: str | None = None) -> str:
     if "WANDB_API_KEY" in os.environ:
         env_vars["WANDB_API_KEY"] = os.environ["WANDB_API_KEY"]
 
-    # docker_args: the command the container runs at startup
+    # docker_args: the command the container runs at startup.
+    # NOTE: RunPod SDK embeds docker_args inside a double-quoted GraphQL string,
+    # so docker_args must NOT contain double-quote characters.
     docker_cmd = (
-        f"bash -c 'curl -fsSL \"{RUN_PY_RAW}\" -o /tmp/run.py && "
+        f"bash -c 'curl -fsSL {RUN_PY_RAW} -o /tmp/run.py && "
         f"python /tmp/run.py 2>&1; tail -f /dev/null'"
     )
 
