@@ -72,12 +72,21 @@ def create_pod(config: dict, gpu_type: str | None = None) -> str:
     if "WANDB_API_KEY" in os.environ:
         env_vars["WANDB_API_KEY"] = os.environ["WANDB_API_KEY"]
 
-    # docker_args: the command the container runs at startup.
+    # docker_args: replaces the container CMD, so we must set up sshd manually.
     # NOTE: RunPod SDK embeds docker_args inside a double-quoted GraphQL string,
     # so docker_args must NOT contain double-quote characters.
+    # PUBLIC_KEY env var is injected by RunPod (from account SSH key).
     docker_cmd = (
-        f"bash -c 'curl -fsSL {RUN_PY_RAW} -o /tmp/run.py && "
-        f"python /tmp/run.py 2>&1; tail -f /dev/null'"
+        f"bash -c '"
+        f"mkdir -p /root/.ssh; "
+        f"echo $PUBLIC_KEY >> /root/.ssh/authorized_keys; "
+        f"chmod 700 /root/.ssh; "
+        f"chmod 600 /root/.ssh/authorized_keys; "
+        f"/usr/sbin/sshd 2>/dev/null || service ssh start 2>/dev/null || true; "
+        f"mkdir -p /workspace; "
+        f"curl -fsSL {RUN_PY_RAW} -o /tmp/run.py && "
+        f"python /tmp/run.py 2>&1; "
+        f"tail -f /dev/null'"
     )
 
     pod = runpod.create_pod(
