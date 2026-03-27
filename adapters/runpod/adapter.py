@@ -98,7 +98,7 @@ def create_pod(config: dict, gpu_type: str | None = None) -> str:
 
 
 def wait_for_running(pod_id: str) -> dict:
-    """Poll until pod is RUNNING and has an IP. Returns pod info."""
+    """Poll until pod SSH is ready. Returns pod info."""
     import runpod
     print("[runpod] Waiting for pod to start...", flush=True)
     elapsed = 0
@@ -106,24 +106,38 @@ def wait_for_running(pod_id: str) -> dict:
         pod = runpod.get_pod(pod_id)
         status = pod.get("desiredStatus") or pod.get("status") or "UNKNOWN"
         runtime = pod.get("runtime") or {}
-        ports = runtime.get("ports") or []
-        print(f"  [{elapsed:4d}s] status={status}  ports={ports}", flush=True)
-        if status == "RUNNING" and ports:
+        runtime_ports = runtime.get("ports") or []
+        direct_port = pod.get("port")  # top-level port field (some API versions)
+        ssh_ready = bool(runtime_ports) or bool(direct_port)
+        print(f"  [{elapsed:4d}s] status={status}  dockerId={pod.get('dockerId')}  ssh={ssh_ready}", flush=True)
+        if ssh_ready:
             return pod
         if status in ("FAILED", "DEAD", "TERMINATED"):
             raise RuntimeError(f"Pod entered terminal state: {status}")
         time.sleep(POLL_INTERVAL)
         elapsed += POLL_INTERVAL
-    raise TimeoutError(f"Pod did not start within {MAX_WAIT}s")
+    raise TimeoutError(f"Pod did not become ready within {MAX_WAIT}s")
 
 
 def get_ssh_info(pod: dict) -> tuple[str, int]:
-    """Extract (host, port) for SSH from pod info."""
-    ports = pod.get("runtime", {}).get("ports", [])
+    """Extract (host, port) for SSH from pod info. Handles both runtime.ports and direct port field."""
+    # Try runtime.ports first (newer API format)
+    ports = (pod.get("runtime") or {}).get("ports") or []
     for p in ports:
         if p.get("privatePort") == 22:
             return p["ip"], int(p["publicPort"])
-    raise RuntimeError(f"No SSH port found in pod info: {pod}")
+    # Fallback: top-level port + machine IP or public IP
+    direct_port = pod.get("port")
+    if direct_port:
+        # Try to find IP from runtime or machine info
+        ip = (pod.get("runtime") or {}).get("gpus", [{}])[0].get("id") or ""
+        if not ip:
+            raise RuntimeError(
+                f"Pod has port={direct_port} but no IP found.\n"
+                f"Full pod info: {pod}"
+            )
+        return ip, int(direct_port)
+    raise RuntimeError(f"No SSH info found in pod info: {pod}")
 
 
 def wait_for_training(host: str, port: int) -> None:

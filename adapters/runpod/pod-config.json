@@ -1,8 +1,8 @@
 {
   "gpu_type_id": "NVIDIA GeForce RTX 5090",
-  "image_name": "runpod/pytorch:2.6.0-py3.11-cuda12.8.0-devel-ubuntu22.04",
+  "image_name": "runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04",
   "volume_in_gb": 10,
   "container_disk_in_gb": 20,
-  "cloud_type": "SECURE",
+  "cloud_type": "ALL",
   "ports": "22/tcp"
 }
