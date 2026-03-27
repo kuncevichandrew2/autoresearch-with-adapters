@@ -104,6 +104,11 @@ def wait_for_running(pod_id: str) -> dict:
     elapsed = 0
     while elapsed < MAX_WAIT:
         pod = runpod.get_pod(pod_id)
+        if pod is None:
+            print(f"  [{elapsed:4d}s] get_pod returned None — retrying...", flush=True)
+            time.sleep(POLL_INTERVAL)
+            elapsed += POLL_INTERVAL
+            continue
         status = pod.get("desiredStatus") or pod.get("status") or "UNKNOWN"
         runtime = pod.get("runtime") or {}
         runtime_ports = runtime.get("ports") or []
@@ -144,6 +149,7 @@ def wait_for_training(host: str, port: int) -> None:
     """Poll via SSH until the training summary block appears in the log."""
     print("[runpod] Waiting for training to complete (polling log)...", flush=True)
     elapsed = 0
+    ssh_fails = 0
     ssh_base = [
         "ssh", "-o", "StrictHostKeyChecking=no",
         "-o", f"ConnectTimeout={SSH_TIMEOUT}",
@@ -157,6 +163,16 @@ def wait_for_training(host: str, port: int) -> None:
             capture_output=True, text=True,
         )
         count = result.stdout.strip()
+        if not count:
+            ssh_fails += 1
+            print(f"  [{elapsed:4d}s] SSH failed (returncode={result.returncode}, consecutive={ssh_fails})", flush=True)
+            if ssh_fails >= 10:
+                raise RuntimeError(
+                    f"SSH failed {ssh_fails} times in a row — pod may have crashed.\n"
+                    f"stderr: {result.stderr[:300]}"
+                )
+            continue
+        ssh_fails = 0  # reset on successful SSH
         print(f"  [{elapsed:4d}s] '---' blocks in log: {count}", flush=True)
         if count.isdigit() and int(count) >= 1:
             return
