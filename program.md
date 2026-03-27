@@ -6,8 +6,9 @@ Autonomous ML research: iterate on `train.py` to minimize `val_loss` (eval cross
 
 1. Agree on a run tag (e.g. `mar5`), create branch `autoresearch/<tag>`.
 2. Read: `prepare.py` (read-only), `train.py` (you modify this), this file.
-3. Verify `~/.cache/autoresearch/` has data. If not: `uv run prepare.py`.
-4. Create `results.tsv` with header row. Run baseline first: `uv run train.py`.
+3. Read `reports/current_state.md` — current best, full experiment history, key learnings, ideas queue.
+4. Verify `~/.cache/autoresearch/` has data. If not: `uv run prepare.py`.
+5. Create `results.tsv` with header row. Run baseline first: `uv run train.py`.
 
 ## Rules
 
@@ -29,13 +30,21 @@ Run forever until manually stopped. Never pause to ask the human.
 
 Kill runs exceeding 10 minutes. Treat as failure.
 
-7. Save a mini-report to `reports/` (see below).
+7. Save a mini-report and update the state file (see below).
 
 ## Experiment Reports
 
-After each experiment, save a markdown report to `reports/{N}_{timestamp}.md` where `N` is the experiment number (starting from 1, zero-padded to 3 digits) and `timestamp` is `YYYYMMDD_HHMMSS`. Create `reports/` if it doesn't exist.
+After each experiment:
 
-Example filename: `reports/033_20260326_141500.md`
+**a) Save a mini-report** to `reports/YYYY-MM-DD-<provider-model>/NNN_HHMMSS.md`
+- `YYYY-MM-DD` = session date
+- `<provider-model>` = e.g. `anthropic-sonnet-4-6` (model running the agent)
+- `NNN` = experiment number zero-padded to 3 digits
+- `HHMMSS` = time of experiment completion
+
+Example: `reports/2026-03-26-anthropic-sonnet-4-6/009_143200.md`
+
+**b) Update `reports/current_state.md`** — add a row to the experiment history table and update "current best" and "current config" if improved.
 
 Report template:
 
