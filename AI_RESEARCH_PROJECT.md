@@ -1,110 +1,110 @@
-# AI Research Project — Organization Guide
+# Организация AI Research Project
 
-A practical guide for structuring autonomous ML research projects: how to lay out the repository, track experiments, and eventually bridge research artifacts into production systems.
+Практическое руководство по структурированию автономных ML-исследовательских проектов: как организовать репозиторий, отслеживать эксперименты и переносить результаты в продакшн.
 
 ---
 
-## 1. The Core Tension: Research vs. Production
+## 1. Ключевое противоречие: исследование vs. продакшн
 
-Research and production have opposite priorities:
+У исследования и продакшна противоположные приоритеты:
 
-| | Research | Production |
+| | Исследование | Продакшн |
 |---|---|---|
-| **Goal** | Discover what works | Reliably deliver what works |
-| **Code** | Mutable, experimental | Stable, versioned |
-| **Reproducibility** | Nice to have | Required |
-| **Failure mode** | "Interesting failure" | Outage |
-| **Iteration speed** | Fast | Careful |
+| **Цель** | Найти то, что работает | Надёжно доставлять то, что работает |
+| **Код** | Изменяемый, экспериментальный | Стабильный, версионированный |
+| **Воспроизводимость** | Желательна | Обязательна |
+| **Режим отказа** | «Интересный сбой» | Авария в проде |
+| **Скорость итераций** | Быстрая | Осторожная |
 
-A good project structure keeps these worlds separate while making it easy to graduate discoveries from one to the other.
+Хорошая структура проекта разделяет эти два мира, но при этом упрощает перенос находок из одного в другой.
 
 ---
 
-## 2. Logical Structure of a Research Project
+## 2. Логическая структура исследовательского проекта
 
-Every ML research project has the same logical layers regardless of size:
+Любой ML-исследовательский проект имеет одинаковые логические уровни, вне зависимости от масштаба:
 
 ```
-Problem definition
-    └── Hypothesis space
-            └── Experiments (iterate)
-                    └── Findings / learnings
-                            └── Best config / artifact
-                                    └── Production candidate
+Постановка задачи
+    └── Пространство гипотез
+            └── Эксперименты (итерации)
+                    └── Выводы / знания
+                            └── Лучший конфиг / артефакт
+                                    └── Кандидат для продакшна
 ```
 
-**The agent's job** is to traverse this graph efficiently: form hypotheses, run experiments, record findings, update beliefs, repeat.
+**Задача агента** — эффективно проходить этот граф: формулировать гипотезы, проводить эксперименты, фиксировать выводы, обновлять убеждения, повторять.
 
-### What to track
+### Что отслеживать
 
-| Layer | What | Where |
+| Уровень | Что | Где |
 |---|---|---|
-| Problem | Goal metric, constraints, budget | `program.md` |
-| State | Current best, history, ideas queue | `reports/current_state.md` |
-| Experiments | Individual run details | `reports/<session>/NNN_HHMMSS.md` |
-| Code | One mutable file per experiment | `train.py` (git history) |
-| Metrics | Compact log for analysis | `results.tsv` |
-| Insights | Cross-experiment patterns | `CLAUDE.md` |
+| Задача | Целевая метрика, ограничения, бюджет | `program.md` |
+| Состояние | Текущий лучший результат, история, очередь идей | `reports/current_state.md` |
+| Эксперименты | Детали отдельных запусков | `reports/<сессия>/NNN_HHMMSS.md` |
+| Код | Один изменяемый файл на эксперимент | `train.py` (история git) |
+| Метрики | Компактный лог для анализа | `results.tsv` |
+| Инсайты | Паттерны между экспериментами | `CLAUDE.md` |
 
 ---
 
-## 3. Folder Structure (This Project)
+## 3. Структура папок (этот проект)
 
 ```
 autoresearch/
 │
-├── train.py                    ← THE experiment file (agent modifies this)
-├── prepare.py                  ← Data pipeline (read-only)
-├── program.md                  ← Agent instructions: goal, rules, loop
-├── CLAUDE.md                   ← Agent memory: learnings, workflow, setup
-├── AI_RESEARCH_PROJECT.md      ← This file
+├── train.py                    ← ГЛАВНЫЙ файл эксперимента (агент изменяет его)
+├── prepare.py                  ← Пайплайн данных (только чтение)
+├── program.md                  ← Инструкции агенту: цель, правила, цикл
+├── CLAUDE.md                   ← Память агента: выводы, рабочий процесс, настройка
+├── AI_RESEARCH_PROJECT.md      ← Этот файл
 │
 ├── reports/
-│   ├── current_state.md        ← Living summary: best config, full history, ideas
-│   └── YYYY-MM-DD-<model>/     ← One folder per agent session
-│       ├── 001_HHMMSS.md       ← Experiment report: hypothesis, changes, metrics
+│   ├── current_state.md        ← Живое резюме: лучший конфиг, вся история, идеи
+│   └── YYYY-MM-DD-<модель>/    ← Одна папка на сессию агента
+│       ├── 001_HHMMSS.md       ← Отчёт по эксперименту: гипотеза, изменения, метрики
 │       ├── 002_HHMMSS.md
 │       └── ...
 │
-├── results.tsv                 ← Tab-separated: commit, val_loss, vram, status, desc
-├── analysis.ipynb              ← Visualization and trend analysis
+├── results.tsv                 ← TSV: commit, val_loss, vram, статус, описание
+├── analysis.ipynb              ← Визуализация и анализ трендов
 │
 ├── adapters/
-│   ├── kaggle/                 ← Free P100 GPU adapter
-│   └── runpod/                 ← Paid RTX 4090/A100/H100 adapter
+│   ├── kaggle/                 ← Адаптер для бесплатного GPU P100
+│   └── runpod/                 ← Адаптер для платных RTX 4090/A100/H100
 │
-└── pyproject.toml              ← Dependencies
+└── pyproject.toml              ← Зависимости
 ```
 
-### Navigation guide
+### Навигация по проекту
 
-| Question | Where to look |
+| Вопрос | Куда смотреть |
 |---|---|
-| What's the current best result? | `reports/current_state.md` → "Current best" |
-| What has been tried? | `reports/current_state.md` → "Experiment history" |
-| Why was X discarded? | `reports/<session>/NNN_HHMMSS.md` → "Notes" |
-| What is the agent supposed to do? | `program.md` |
-| How does training/eval work? | `prepare.py` (read-only) |
-| What are the P100 constraints? | `CLAUDE.md` → "P100 constraints" |
-| How do I run on Kaggle/RunPod? | `CLAUDE.md` → experiment workflow sections |
-| Trend plots across experiments | `analysis.ipynb` |
+| Каков текущий лучший результат? | `reports/current_state.md` → «Текущий лучший» |
+| Что уже было испробовано? | `reports/current_state.md` → «История экспериментов» |
+| Почему X был отброшен? | `reports/<сессия>/NNN_HHMMSS.md` → «Заметки» |
+| Что должен делать агент? | `program.md` |
+| Как работает обучение/оценка? | `prepare.py` (только чтение) |
+| Каковы ограничения P100? | `CLAUDE.md` → «P100 constraints» |
+| Как запустить на Kaggle/RunPod? | `CLAUDE.md` → разделы с рабочим процессом |
+| Графики трендов по экспериментам | `analysis.ipynb` |
 
 ---
 
-## 4. Experiment Lifecycle
+## 4. Жизненный цикл эксперимента
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Session start                                               │
-│  1. Read program.md  →  2. Read reports/current_state.md    │
+│  Начало сессии                                               │
+│  1. Читаем program.md  →  2. Читаем reports/current_state.md│
 └──────────────────────────────┬──────────────────────────────┘
                                │
                     ┌──────────▼──────────┐
-                    │  Form hypothesis    │  (from ideas queue or new insight)
+                    │  Формируем гипотезу │  (из очереди идей или нового инсайта)
                     └──────────┬──────────┘
                                │
                     ┌──────────▼──────────┐
-                    │  Edit train.py      │  (smallest change that tests the idea)
+                    │  Правим train.py    │  (минимальное изменение для проверки)
                     └──────────┬──────────┘
                                │
                     ┌──────────▼──────────┐
@@ -112,47 +112,47 @@ autoresearch/
                     └──────────┬──────────┘
                                │
                     ┌──────────▼──────────┐
-                    │  Run training       │  (5-min budget, on GPU adapter)
+                    │  Запускаем обучение │  (5-мин бюджет, через адаптер GPU)
                     └──────────┬──────────┘
                                │
               ┌────────────────┴────────────────┐
               │                                 │
     ┌─────────▼─────────┐             ┌─────────▼─────────┐
-    │  val_loss improved│             │  val_loss worse   │
-    │  → keep commit    │             │  → git reset      │
-    └─────────┬─────────┘             └─────────┬─────────┘
+    │  val_loss улучшился│            │  val_loss хуже    │
+    │  → оставляем коммит│            │  → git reset      │
+    └─────────┬──────────┘            └─────────┬─────────┘
               │                                 │
               └────────────────┬────────────────┘
                                │
                     ┌──────────▼──────────┐
-                    │  Write report       │  reports/<session>/NNN.md
-                    │  Update state       │  reports/current_state.md
-                    │  Log results.tsv    │
+                    │  Пишем отчёт        │  reports/<сессия>/NNN.md
+                    │  Обновляем состояние│  reports/current_state.md
+                    │  Пишем results.tsv  │
                     └──────────┬──────────┘
                                │
                     ┌──────────▼──────────┐
-                    │  Next hypothesis    │  ← repeat forever
+                    │  Следующая гипотеза │  ← повторяем бесконечно
                     └─────────────────────┘
 ```
 
-### Experiment report template
+### Шаблон отчёта по эксперименту
 
 ```markdown
-# Experiment NNN
+# Эксперимент NNN
 
-**Date:** YYYY-MM-DD HH:MM:SS
-**Commit:** abc1234
-**Status:** keep | discard | crash
+**Дата:** YYYY-MM-DD HH:MM:SS
+**Коммит:** abc1234
+**Статус:** keep | discard | crash
 
-## Hypothesis
-What you expected to happen and why.
+## Гипотеза
+Что ожидалось и почему была выбрана эта идея.
 
-## Changes
-Concrete diff: what changed in train.py (hyperparams, architecture, etc).
+## Изменения
+Конкретный diff: что изменилось в train.py (гиперпараметры, архитектура и т.д.).
 
-## Metrics
+## Метрики
 
-| Metric           | Value    |
+| Метрика          | Значение |
 |------------------|----------|
 | val_loss         | 5.129    |
 | prev_best_loss   | 5.140    |
@@ -164,209 +164,209 @@ Concrete diff: what changed in train.py (hyperparams, architecture, etc).
 | num_steps        | 355      |
 | num_params_M     | 16.9     |
 
-## Result
-One-line verdict: kept/discarded/crashed and why.
+## Результат
+Однострочный вердикт: оставлен/отброшен/упал и почему.
 
-## Notes
-Observations, surprises, follow-up ideas.
+## Заметки
+Наблюдения, сюрпризы, идеи для следующих экспериментов.
 ```
 
 ---
 
-## 5. `current_state.md` — The Agent's Working Memory
+## 5. `current_state.md` — рабочая память агента
 
-This file is the single most important artifact for multi-session research. It answers: "where are we right now?"
+Этот файл — самый важный артефакт при многосессионных исследованиях. Он отвечает на вопрос: «где мы сейчас находимся?»
 
-**Updated after every experiment.** Read at the start of every session.
+**Обновляется после каждого эксперимента. Читается в начале каждой сессии.**
 
-### Structure
+### Структура
 
 ```markdown
-# Research Current State
+# Текущее состояние исследования
 
-## Current best
+## Текущий лучший результат
 | val_loss | commit | steps | config |
 ...
 
-## Experiment history
-| # | val_loss | Δ | steps | status | what changed |
+## История экспериментов
+| # | val_loss | Δ | steps | статус | что изменилось |
 ...
 
-## Current train.py config
-(exact hyperparams block)
+## Текущий конфиг train.py
+(точный блок гиперпараметров)
 
-## Key learnings
-(cross-experiment patterns, confirmed hypotheses)
+## Ключевые выводы
+(паттерны между экспериментами, подтверждённые гипотезы)
 
-## Next ideas to try
-(ordered queue of hypotheses, most promising first)
+## Идеи для следующих экспериментов
+(упорядоченная очередь гипотез, самые перспективные — первыми)
 ```
 
-**Why it works:**
-- Agent doesn't need to re-read all individual reports on each session start
-- The ideas queue prevents forgetting good hypotheses when context is cleared
-- Key learnings encode hard-won insights (e.g. "step count dominates over model size")
+**Почему это работает:**
+- Агент не перечитывает все отдельные отчёты при старте новой сессии
+- Очередь идей не позволяет забыть хорошие гипотезы при смене контекста
+- Ключевые выводы фиксируют труднодобытые знания (например: «количество шагов важнее размера модели»)
 
 ---
 
-## 6. ML Production Project Structure
+## 6. Структура ML-проекта в продакшне
 
-When a research finding is ready to ship, the project structure changes significantly.
+Когда исследовательская находка готова к выпуску, структура проекта существенно меняется.
 
 ```
 ml-service/
 │
 ├── src/
 │   ├── model/
-│   │   ├── architecture.py     ← Frozen (came from research train.py)
-│   │   ├── config.py           ← Typed dataclass, validated
-│   │   └── checkpoint.py       ← Load/save, versioning
+│   │   ├── architecture.py     ← Заморожена (пришла из research train.py)
+│   │   ├── config.py           ← Типизированный датакласс с валидацией
+│   │   └── checkpoint.py       ← Загрузка/сохранение, версионирование
 │   │
 │   ├── data/
-│   │   ├── pipeline.py         ← Deterministic, tested
-│   │   ├── tokenizer.py        ← Pinned version
+│   │   ├── pipeline.py         ← Детерминированный, протестированный
+│   │   ├── tokenizer.py        ← Зафиксированная версия
 │   │   └── loaders.py
 │   │
 │   ├── training/
-│   │   ├── trainer.py          ← Orchestration (multi-GPU, checkpointing)
-│   │   ├── optimizer.py        ← Exact config from best research run
+│   │   ├── trainer.py          ← Оркестрация (multi-GPU, чекпоинты)
+│   │   ├── optimizer.py        ← Точный конфиг из лучшего исследовательского запуска
 │   │   └── scheduler.py
 │   │
 │   ├── evaluation/
-│   │   ├── metrics.py          ← val_loss + downstream task metrics
-│   │   └── benchmark.py        ← Regression tests against known baselines
+│   │   ├── metrics.py          ← val_loss + метрики downstream-задач
+│   │   └── benchmark.py        ← Регрессионные тесты против известных базелайнов
 │   │
 │   └── serving/
-│       ├── inference.py        ← Batching, quantization, caching
-│       └── api.py              ← REST/gRPC interface
+│       ├── inference.py        ← Батчинг, квантизация, кэширование
+│       └── api.py              ← REST/gRPC интерфейс
 │
 ├── configs/
-│   ├── base.yaml               ← Canonical best config
-│   ├── small.yaml              ← Smaller variant for cheaper deployment
+│   ├── base.yaml               ← Канонический лучший конфиг
+│   ├── small.yaml              ← Облегчённый вариант для дешёвого деплоя
 │   └── large.yaml
 │
 ├── scripts/
-│   ├── train.py                ← Entry point (CLI args, config loading)
+│   ├── train.py                ← Точка входа (CLI-аргументы, загрузка конфига)
 │   ├── evaluate.py
-│   └── export.py               ← ONNX / TorchScript export
+│   └── export.py               ← Экспорт в ONNX / TorchScript
 │
 ├── tests/
-│   ├── unit/                   ← Model forward pass, loss shapes, etc.
-│   ├── integration/            ← Full train loop (smoke test, 10 steps)
-│   └── regression/             ← val_loss must stay below known threshold
+│   ├── unit/                   ← Forward pass модели, формы лоссов и т.д.
+│   ├── integration/            ← Полный цикл обучения (smoke test, 10 шагов)
+│   └── regression/             ← val_loss должен оставаться ниже известного порога
 │
 ├── notebooks/
-│   └── analysis.ipynb          ← Visualization (read-only in CI)
+│   └── analysis.ipynb          ← Визуализация (в CI только чтение)
 │
 ├── Dockerfile
-├── pyproject.toml              ← Pinned deps, no ranges
+├── pyproject.toml              ← Зафиксированные зависимости, без диапазонов
 └── .github/
     └── workflows/
         ├── test.yml
-        └── train.yml           ← Triggered on config change
+        └── train.yml           ← Запускается при изменении конфига
 ```
 
-### Key differences from research structure
+### Ключевые отличия от исследовательской структуры
 
-| Aspect | Research | Production |
+| Аспект | Исследование | Продакшн |
 |---|---|---|
-| Config | Inline constants in train.py | Typed YAML + dataclass |
-| Dependencies | Ranges (`>=0.1`) | Pinned (`==2.4.1`) |
-| Testing | None | Unit + integration + regression |
-| Checkpointing | Optional | Required, versioned |
-| Reproducibility | Git hash | Git hash + seed + pinned deps + Dockerfile |
-| Serving | N/A | Batching, quantization, API |
-| Monitoring | WandB (optional) | WandB + alerting + drift detection |
+| Конфиг | Inline-константы в train.py | Типизированный YAML + датакласс |
+| Зависимости | Диапазоны (`>=0.1`) | Зафиксированы (`==2.4.1`) |
+| Тестирование | Отсутствует | Unit + integration + regression |
+| Чекпоинтинг | Опционален | Обязателен, версионирован |
+| Воспроизводимость | Хэш git | Хэш git + seed + зафиксированные deps + Dockerfile |
+| Serving | Нет | Батчинг, квантизация, API |
+| Мониторинг | WandB (опционально) | WandB + алертинг + обнаружение дрейфа |
 
 ---
 
-## 7. Bridging Research → Production
+## 7. Переход от исследования к продакшну
 
-The transition is not a rewrite — it's a series of graduated steps.
+Переход — это не переписывание с нуля, а серия постепенных шагов.
 
-### Stage 1: Research (this project)
-- One file (`train.py`), constants at top, no abstractions
-- Goal: find what works
-- Artifact: best commit hash + val_loss
+### Этап 1: Исследование (этот проект)
+- Один файл (`train.py`), константы вверху, никаких абстракций
+- Цель: найти то, что работает
+- Артефакт: хэш лучшего коммита + val_loss
 
-### Stage 2: Consolidation
-- Extract `architecture.py` from train.py (no logic change, just move)
-- Write a typed `Config` dataclass replacing inline constants
-- Add smoke test: 10 steps must complete without crash
-- Pin all dependencies
+### Этап 2: Консолидация
+- Выделить `architecture.py` из train.py (без изменения логики, только перенос)
+- Написать типизированный датакласс `Config`, заменяющий inline-константы
+- Добавить smoke test: 10 шагов должны завершиться без краша
+- Зафиксировать все зависимости
 
-### Stage 3: Hardening
-- Add checkpointing and resume logic
-- Multi-GPU support (if needed)
-- Integration tests: full eval must match research val_loss ±0.001
-- Regression baseline: commit the known-good val_loss as a test threshold
+### Этап 3: Укрепление
+- Добавить чекпоинтинг и возобновление обучения
+- Поддержка нескольких GPU (если нужно)
+- Интеграционные тесты: полная оценка должна совпадать с исследовательским val_loss ±0.001
+- Регрессионный базелайн: зафиксировать известный хороший val_loss как порог теста
 
-### Stage 4: Production
-- Add serving layer (inference.py, API)
-- Dockerfile + CI pipeline
-- Monitoring: alert if live eval degrades beyond threshold
+### Этап 4: Продакшн
+- Добавить serving-слой (inference.py, API)
+- Dockerfile + CI-пайплайн
+- Мониторинг: алерт при деградации live-оценки ниже порога
 
-### What to preserve verbatim from research
+### Что переносить из исследования дословно
 
-These should be copied, not redesigned:
-- Model architecture (exact layer order, norms, activations)
-- Optimizer config (LR, betas, weight decay, scheduler)
-- Data pipeline logic (`prepare.py` → `data/pipeline.py`)
-- Batch sizes and sequence lengths that hit the val_loss target
+Это нужно скопировать, а не переделывать:
+- Архитектура модели (точный порядок слоёв, нормализации, активации)
+- Конфиг оптимизатора (LR, betas, weight decay, scheduler)
+- Логика пайплайна данных (`prepare.py` → `data/pipeline.py`)
+- Размеры батчей и длины последовательностей, дающие целевой val_loss
 
-### What to redesign for production
+### Что переделать для продакшна
 
-- Config management (inline constants → validated YAML)
-- Logging (print statements → structured logging)
-- Error handling (crash-on-error → retry + checkpoint)
-- Dependency management (loose → pinned)
-
----
-
-## 8. Experiment Tracking at Scale
-
-As the number of experiments grows, the flat `current_state.md` becomes insufficient. At ~50+ experiments, consider:
-
-### Option A: Structured TSV + notebook
-Keep `results.tsv` as the source of truth. Use `analysis.ipynb` for:
-- Loss curves across experiments
-- Correlation: which hyperparams matter most
-- Pareto front: val_loss vs. VRAM vs. steps
-
-### Option B: WandB sweeps
-Replace the manual loop with `wandb sweep`:
-- Define search space in `sweep.yaml`
-- WandB agent calls `train.py` with different configs
-- WandB UI shows parallel coordinates, importance plots
-
-### Option C: Optuna / Ray Tune
-For large hyperparameter spaces:
-- Define the objective function (val_loss after N steps)
-- Let the optimizer suggest configs (Bayesian, TPE, etc.)
-- Requires wrapping `train.py` to accept CLI args
-
-**For this project:** Option A is sufficient. Move to B/C when the ideas queue is exhausted and you want systematic search.
+- Управление конфигом (inline-константы → валидированный YAML)
+- Логирование (print → структурированные логи)
+- Обработка ошибок (падение при ошибке → retry + checkpoint)
+- Управление зависимостями (loose → pinned)
 
 ---
 
-## 9. Quick Reference
+## 8. Отслеживание экспериментов при масштабировании
 
-### Start a new session
+По мере роста числа экспериментов плоский `current_state.md` перестаёт справляться. При ~50+ экспериментах стоит рассмотреть:
+
+### Вариант A: TSV + ноутбук
+`results.tsv` как источник истины. В `analysis.ipynb`:
+- Кривые потерь по экспериментам
+- Корреляция: какие гиперпараметры важнее всего
+- Парето-фронт: val_loss vs. VRAM vs. число шагов
+
+### Вариант B: WandB sweeps
+Заменить ручной цикл на `wandb sweep`:
+- Задать пространство поиска в `sweep.yaml`
+- WandB-агент вызывает `train.py` с разными конфигами
+- UI WandB показывает parallel coordinates и графики важности
+
+### Вариант C: Optuna / Ray Tune
+Для больших пространств гиперпараметров:
+- Задать целевую функцию (val_loss после N шагов)
+- Оптимизатор предлагает конфиги (байесовская оптимизация, TPE и т.д.)
+- Требует обёртки `train.py` для приёма CLI-аргументов
+
+**Для этого проекта:** варианта A достаточно. Переходить к B/C, когда очередь идей исчерпана и нужен систематический поиск.
+
+---
+
+## 9. Быстрая шпаргалка
+
+### Начало новой сессии
 ```bash
-# 1. Read program.md and current_state.md
-# 2. Form a hypothesis from the ideas queue
-# 3. Edit train.py, commit, push, run adapter
-# 4. Parse val_loss from output
-# 5. Keep or reset
-# 6. Write report + update current_state.md
+# 1. Читаем program.md и current_state.md
+# 2. Формируем гипотезу из очереди идей
+# 3. Правим train.py, делаем commit, push, запускаем адаптер
+# 4. Парсим val_loss из вывода
+# 5. Оставляем или сбрасываем
+# 6. Пишем отчёт + обновляем current_state.md
 ```
 
-### Add a new adapter (e.g., Lambda Cloud, Vast.ai)
-Mirror `adapters/runpod/`: `run.py` (on-pod) + `adapter.py` (local lifecycle).
+### Добавить новый адаптер (например, Lambda Cloud, Vast.ai)
+Зеркалируем структуру `adapters/runpod/`: `run.py` (на ноде) + `adapter.py` (локальный жизненный цикл).
 
-### Graduate a finding to production
-1. Identify the best commit hash
-2. Extract model config to `configs/best.yaml`
-3. Copy architecture verbatim to `src/model/architecture.py`
-4. Write regression test: `assert val_loss < 5.13`
-5. Pin dependencies, add Dockerfile
+### Перенести находку в продакшн
+1. Определить хэш лучшего коммита
+2. Вынести конфиг модели в `configs/best.yaml`
+3. Скопировать архитектуру дословно в `src/model/architecture.py`
+4. Написать регрессионный тест: `assert val_loss < 5.13`
+5. Зафиксировать зависимости, добавить Dockerfile
