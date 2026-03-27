@@ -1,13 +1,20 @@
 """
 RunPod adapter for autoresearch.
-Creates a GPU pod, runs train.py, streams logs, terminates pod.
+Creates a GPU pod, SSH-launches training, streams logs, terminates pod.
 
 Usage:
     source .env
-    python adapters/runpod/adapter.py [--gpu "NVIDIA GeForce RTX 4090"]
+    python adapters/runpod/adapter.py [--gpu "NVIDIA A100 80GB PCIe"]
 
 Requires:
     pip install runpod
+
+Design:
+    - Pod starts WITHOUT docker_args so the image's /start.sh runs normally
+      (RunPod images use supervisord to start sshd + jupyter etc.)
+    - Once SSH is confirmed connectable, we launch training via SSH + nohup
+    - Poll /workspace/output.log via SSH until '---' summary block appears
+    - Fetch full log, print metrics, terminate pod
 """
 
 import argparse
@@ -22,10 +29,9 @@ import time
 # Config
 # ---------------------------------------------------------------------------
 
-REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_DIR    = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "pod-config.json")
 
-# Raw URL to run.py on GitHub — adapter.py curls this and runs it on the pod
 REPO_URL    = "https://github.com/kuncevichandrew2/autoresearch-with-adapters"
 REPO_BRANCH = "autoresearch/mar26"
 RUN_PY_RAW  = (
@@ -33,17 +39,17 @@ RUN_PY_RAW  = (
     f"autoresearch-with-adapters/{REPO_BRANCH}/adapters/runpod/run.py"
 )
 
-POLL_INTERVAL = 15   # seconds between status polls
-SSH_TIMEOUT   = 10   # seconds for SSH connection timeout
-MAX_WAIT      = 1800 # 30 min max before giving up
+POLL_INTERVAL   = 15    # seconds between polls
+SSH_TIMEOUT     = 10    # seconds per SSH connection attempt
+SSH_RETRY_LIMIT = 40    # max attempts to establish first SSH (~10 min)
+MAX_WAIT        = 1800  # 30 min hard timeout for training
 
 
 # ---------------------------------------------------------------------------
-# Env loading
+# Helpers
 # ---------------------------------------------------------------------------
 
 def load_env():
-    """Load .env from repo root into os.environ."""
     env_path = os.path.join(REPO_DIR, ".env")
     if os.path.exists(env_path):
         with open(env_path) as f:
@@ -54,12 +60,25 @@ def load_env():
                     os.environ.setdefault(key.strip(), val.strip())
 
 
+def ssh_cmd(host: str, port: int, cmd: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [
+            "ssh", "-o", "StrictHostKeyChecking=no",
+            "-o", "LogLevel=ERROR",
+            "-o", f"ConnectTimeout={SSH_TIMEOUT}",
+            "-p", str(port), f"root@{host}",
+            cmd,
+        ],
+        capture_output=True, text=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Pod lifecycle
 # ---------------------------------------------------------------------------
 
 def create_pod(config: dict, gpu_type: str | None = None) -> str:
-    """Create a RunPod pod and return its ID."""
+    """Create a pod WITHOUT docker_args so /start.sh runs and sshd starts."""
     import runpod
 
     runpod.api_key = os.environ["RUNPOD_API_KEY"]
@@ -72,29 +91,11 @@ def create_pod(config: dict, gpu_type: str | None = None) -> str:
     if "WANDB_API_KEY" in os.environ:
         env_vars["WANDB_API_KEY"] = os.environ["WANDB_API_KEY"]
 
-    # docker_args: replaces the container CMD, so we must set up sshd manually.
-    # NOTE: RunPod SDK embeds docker_args inside a double-quoted GraphQL string,
-    # so docker_args must NOT contain double-quote characters.
-    # PUBLIC_KEY env var is injected by RunPod (from account SSH key).
-    docker_cmd = (
-        f"bash -c '"
-        f"mkdir -p /root/.ssh; "
-        f"echo $PUBLIC_KEY >> /root/.ssh/authorized_keys; "
-        f"chmod 700 /root/.ssh; "
-        f"chmod 600 /root/.ssh/authorized_keys; "
-        f"/usr/sbin/sshd 2>/dev/null || service ssh start 2>/dev/null || true; "
-        f"mkdir -p /workspace; "
-        f"curl -fsSL {RUN_PY_RAW} -o /tmp/run.py && "
-        f"python /tmp/run.py 2>&1; "
-        f"tail -f /dev/null'"
-    )
-
     pod = runpod.create_pod(
         name="autoresearch",
         image_name=config["image_name"],
         gpu_type_id=gpu_type or config["gpu_type_id"],
-        cloud_type=config.get("cloud_type", "SECURE"),
-        docker_args=docker_cmd,
+        cloud_type=config.get("cloud_type", "ALL"),
         gpu_count=1,
         volume_in_gb=config.get("volume_in_gb", 10),
         container_disk_in_gb=config.get("container_disk_in_gb", 20),
@@ -106,104 +107,90 @@ def create_pod(config: dict, gpu_type: str | None = None) -> str:
     return pod_id
 
 
-def wait_for_running(pod_id: str) -> dict:
-    """Poll until pod SSH is ready. Returns pod info."""
+def wait_for_api_ready(pod_id: str) -> tuple[str, int]:
+    """Poll API until runtime.ports has SSH. Returns (host, port)."""
     import runpod
-    print("[runpod] Waiting for pod to start...", flush=True)
+    print("[runpod] Waiting for pod API to report SSH port...", flush=True)
     elapsed = 0
     while elapsed < MAX_WAIT:
         pod = runpod.get_pod(pod_id)
         if pod is None:
-            print(f"  [{elapsed:4d}s] get_pod returned None — retrying...", flush=True)
-            time.sleep(POLL_INTERVAL)
-            elapsed += POLL_INTERVAL
-            continue
-        status = pod.get("desiredStatus") or pod.get("status") or "UNKNOWN"
+            raise RuntimeError(f"Pod {pod_id} disappeared from API")
+        status = pod.get("desiredStatus") or "UNKNOWN"
         runtime = pod.get("runtime") or {}
-        runtime_ports = runtime.get("ports") or []
-        direct_port = pod.get("port")  # top-level port field (some API versions)
-        ssh_ready = bool(runtime_ports) or bool(direct_port)
-        print(f"  [{elapsed:4d}s] status={status}  dockerId={pod.get('dockerId')}  ssh={ssh_ready}", flush=True)
-        if ssh_ready:
-            return pod
+        ports = runtime.get("ports") or []
+        print(f"  [{elapsed:4d}s] status={status}  ports={len(ports)}", flush=True)
+        for p in ports:
+            if p.get("privatePort") == 22:
+                return p["ip"], int(p["publicPort"])
         if status in ("FAILED", "DEAD", "TERMINATED"):
             raise RuntimeError(f"Pod entered terminal state: {status}")
         time.sleep(POLL_INTERVAL)
         elapsed += POLL_INTERVAL
-    raise TimeoutError(f"Pod did not become ready within {MAX_WAIT}s")
+    raise TimeoutError(f"Pod SSH port never appeared in API after {MAX_WAIT}s")
 
 
-def get_ssh_info(pod: dict) -> tuple[str, int]:
-    """Extract (host, port) for SSH from pod info. Handles both runtime.ports and direct port field."""
-    # Try runtime.ports first (newer API format)
-    ports = (pod.get("runtime") or {}).get("ports") or []
-    for p in ports:
-        if p.get("privatePort") == 22:
-            return p["ip"], int(p["publicPort"])
-    # Fallback: top-level port + machine IP or public IP
-    direct_port = pod.get("port")
-    if direct_port:
-        # Try to find IP from runtime or machine info
-        ip = (pod.get("runtime") or {}).get("gpus", [{}])[0].get("id") or ""
-        if not ip:
-            raise RuntimeError(
-                f"Pod has port={direct_port} but no IP found.\n"
-                f"Full pod info: {pod}"
-            )
-        return ip, int(direct_port)
-    raise RuntimeError(f"No SSH info found in pod info: {pod}")
+def wait_for_ssh(host: str, port: int) -> None:
+    """Actually verify SSH connectivity — try until it works."""
+    print(f"[runpod] Waiting for SSH at {host}:{port}...", flush=True)
+    for attempt in range(SSH_RETRY_LIMIT):
+        result = ssh_cmd(host, port, "echo ok")
+        if result.returncode == 0 and "ok" in result.stdout:
+            print(f"  SSH ready after {attempt * POLL_INTERVAL}s", flush=True)
+            return
+        elapsed = attempt * POLL_INTERVAL
+        print(f"  [{elapsed:4d}s] SSH not yet ready (rc={result.returncode})", flush=True)
+        time.sleep(POLL_INTERVAL)
+    raise TimeoutError(f"SSH never became connectable at {host}:{port}")
+
+
+def start_training(host: str, port: int) -> None:
+    """Launch training in background via SSH (nohup + disown)."""
+    print("[runpod] Starting training via SSH...", flush=True)
+    # nohup + disown ensures the process survives SSH session end
+    launch_cmd = (
+        f"mkdir -p /workspace && "
+        f"nohup bash -c 'curl -fsSL {RUN_PY_RAW} -o /tmp/run.py && "
+        f"python /tmp/run.py' > /workspace/output.log 2>&1 & disown"
+    )
+    result = ssh_cmd(host, port, launch_cmd)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Failed to start training.\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+    print("[runpod] Training launched in background.", flush=True)
 
 
 def wait_for_training(host: str, port: int) -> None:
-    """Poll via SSH until the training summary block appears in the log."""
+    """Poll via SSH until '---' summary block appears in /workspace/output.log."""
     print("[runpod] Waiting for training to complete (polling log)...", flush=True)
     elapsed = 0
-    ssh_fails = 0
-    ssh_base = [
-        "ssh", "-o", "StrictHostKeyChecking=no",
-        "-o", f"ConnectTimeout={SSH_TIMEOUT}",
-        "-p", str(port), f"root@{host}",
-    ]
     while elapsed < MAX_WAIT:
         time.sleep(POLL_INTERVAL)
         elapsed += POLL_INTERVAL
-        result = subprocess.run(
-            ssh_base + ["grep -c '^---' /workspace/output.log 2>/dev/null || echo 0"],
-            capture_output=True, text=True,
-        )
+        result = ssh_cmd(host, port,
+            "grep -c '^---' /workspace/output.log 2>/dev/null || echo 0")
         count = result.stdout.strip()
-        if not count:
-            ssh_fails += 1
-            print(f"  [{elapsed:4d}s] SSH failed (returncode={result.returncode}, consecutive={ssh_fails})", flush=True)
-            if ssh_fails >= 10:
-                raise RuntimeError(
-                    f"SSH failed {ssh_fails} times in a row — pod may have crashed.\n"
-                    f"stderr: {result.stderr[:300]}"
-                )
-            continue
-        ssh_fails = 0  # reset on successful SSH
-        print(f"  [{elapsed:4d}s] '---' blocks in log: {count}", flush=True)
+        # Also show last training line for visibility
+        tail = ssh_cmd(host, port,
+            "grep 'step ' /workspace/output.log 2>/dev/null | tail -1 || echo ''")
+        step_line = tail.stdout.strip()[-80:] if tail.stdout.strip() else "..."
+        print(f"  [{elapsed:4d}s] '---' blocks: {count or '(ssh err)'}  |  {step_line}", flush=True)
         if count.isdigit() and int(count) >= 1:
             return
+        if result.returncode != 0 and elapsed > 120:
+            print(f"    SSH error: rc={result.returncode} stderr={result.stderr[:100]}", flush=True)
     raise TimeoutError(f"Training did not finish within {MAX_WAIT}s")
 
 
 def fetch_log(host: str, port: int) -> str:
-    """SSH-cat the output log from the pod."""
-    result = subprocess.run(
-        [
-            "ssh", "-o", "StrictHostKeyChecking=no",
-            "-o", f"ConnectTimeout={SSH_TIMEOUT}",
-            "-p", str(port), f"root@{host}",
-            "cat /workspace/output.log",
-        ],
-        capture_output=True, text=True, check=True,
-    )
+    result = ssh_cmd(host, port, "cat /workspace/output.log")
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to fetch log: {result.stderr}")
     return result.stdout
 
 
 def parse_summary(log: str) -> dict:
-    """Extract the --- summary block from training output."""
     idx = log.find("---")
     if idx < 0:
         return {}
@@ -223,7 +210,6 @@ def parse_summary(log: str) -> dict:
 
 
 def terminate_pod(pod_id: str) -> None:
-    """Terminate the pod."""
     import runpod
     runpod.terminate_pod(pod_id)
     print(f"[runpod] Pod {pod_id} terminated.", flush=True)
@@ -235,7 +221,8 @@ def terminate_pod(pod_id: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Run autoresearch on RunPod")
-    parser.add_argument("--gpu", default=None, help="GPU type override (e.g. 'NVIDIA A100 80GB PCIe')")
+    parser.add_argument("--gpu", default=None,
+        help="GPU type override (e.g. 'NVIDIA A100 80GB PCIe')")
     args = parser.parse_args()
 
     load_env()
@@ -250,10 +237,10 @@ def main():
     pod_id = None
     try:
         pod_id = create_pod(config, gpu_type=args.gpu)
-        pod = wait_for_running(pod_id)
-        host, port = get_ssh_info(pod)
-        print(f"[runpod] Pod running at {host}:{port}", flush=True)
-
+        host, port = wait_for_api_ready(pod_id)
+        print(f"[runpod] Pod API reports SSH at {host}:{port}", flush=True)
+        wait_for_ssh(host, port)
+        start_training(host, port)
         wait_for_training(host, port)
 
         log = fetch_log(host, port)
@@ -264,8 +251,8 @@ def main():
             for k, v in metrics.items():
                 print(f"{k}: {v}")
         else:
-            print("WARNING: no summary block found in output.")
-            print("--- last 500 chars of log ---")
+            print("WARNING: no summary block found.")
+            print("--- last 500 chars ---")
             print(log[-500:])
         print("=" * 40)
 
@@ -274,8 +261,9 @@ def main():
             try:
                 terminate_pod(pod_id)
             except Exception as e:
-                print(f"WARNING: failed to terminate pod {pod_id}: {e}", file=sys.stderr)
-                print(f"  Manually terminate at https://www.runpod.io/console/pods", file=sys.stderr)
+                print(f"WARNING: failed to terminate {pod_id}: {e}", file=sys.stderr)
+                print("  Manually terminate at https://www.runpod.io/console/pods",
+                      file=sys.stderr)
 
 
 if __name__ == "__main__":
