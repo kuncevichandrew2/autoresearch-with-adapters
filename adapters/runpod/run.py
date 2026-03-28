@@ -46,6 +46,9 @@ subprocess.run([sys.executable, "-m", "pip", "install",
 ], check=True)
 
 print("\n=== Cloning repo ===", flush=True)
+import shutil
+if os.path.exists("repo"):
+    shutil.rmtree("repo")
 subprocess.run([
     "git", "clone", "--branch", REPO_BRANCH, "--depth", "1", REPO_URL, "repo",
 ], check=True)
