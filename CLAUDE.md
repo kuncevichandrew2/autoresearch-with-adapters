@@ -61,7 +61,9 @@ echo -e "<commit7>\t<val_loss>\t<vram_gb>\t<keep|discard>\t<description>" >> res
 
 ## Experiment workflow (RunPod)
 
-Alternative to Kaggle — use when you need a faster GPU (RTX 4090, A100) or Kaggle quota is exhausted.
+Alternative to Kaggle — use when you need a faster GPU (RTX 4090, A100, RTX 5090) or Kaggle quota is exhausted.
+
+### Single-run mode (pod terminates after each experiment)
 
 ```bash
 # 1. Modify train.py, commit, push
@@ -71,16 +73,48 @@ git push adapters autoresearch/mar26
 # 2. Run adapter — creates pod, trains, prints result, terminates pod
 source .env
 python adapters/runpod/adapter.py
-
-# Optional: override GPU type
-python adapters/runpod/adapter.py --gpu "NVIDIA A100 80GB PCIe"
 ```
 
-- Pod is created fresh each run (no persistent state)
-- Pod is always terminated after training (even on error)
-- GPU type configured in `adapters/runpod/pod-config.json`
+### Keep-alive mode (pod persists across experiments — faster iteration)
+
+Skip the ~5 min pod startup/teardown between experiments.
+
+```bash
+# First experiment — create pod, run, keep alive
+source .env
+python adapters/runpod/adapter.py --no-terminate
+# Output: "Next run: python adapters/runpod/adapter.py --pod-id XXXX --no-terminate"
+
+# Subsequent experiments — edit train.py, commit, push, then reuse pod:
+git add train.py && git commit -m "expNNN: description"
+git push adapters autoresearch/mar26
+python adapters/runpod/adapter.py --pod-id XXXX --no-terminate
+
+# When done with session — terminate manually:
+python -c "import runpod,os; runpod.api_key=os.environ['RUNPOD_API_KEY']; runpod.terminate_pod('XXXX')"
+```
+
+**IMPORTANT:** The pod clones the repo fresh each run — always push before running.
+
+### Config
+
+- GPU type: `adapters/runpod/pod-config.json` (currently: RTX 3090)
+- Override GPU: `python adapters/runpod/adapter.py --gpu "NVIDIA GeForce RTX 3090"`
 - `RUNPOD_API_KEY` must be in root `.env`
 - Install: `pip install runpod`
+- SSH: uses direct IP:port from RunPod API (not the proxy at ssh.runpod.io — proxy is interactive-only)
+
+### GPU compatibility notes
+
+| GPU | SM | CUDA req | Image | Status |
+|-----|----|----------|-------|--------|
+| RTX 3090 | 8.6 | 12.4+ | `runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04` | **working** |
+| RTX 4090 | 8.9 | 12.4+ | same | often unavailable |
+| RTX 5090 | 10.0 | 12.8+ | no RunPod image with CUDA 12.8 confirmed | broken |
+| A100 80GB | 8.0 | 12.4+ | same | works, more expensive |
+
+- RTX 5090 is NOT usable — requires CUDA 12.8+ and no RunPod image with that version is confirmed
+- RTX 3090 is the recommended default: cheap, available, torch.compile works, 24GB VRAM
 
 ## Kaggle setup
 
