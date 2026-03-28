@@ -61,60 +61,66 @@ echo -e "<commit7>\t<val_loss>\t<vram_gb>\t<keep|discard>\t<description>" >> res
 
 ## Experiment workflow (RunPod)
 
-Alternative to Kaggle — use when you need a faster GPU (RTX 4090, A100, RTX 5090) or Kaggle quota is exhausted.
+RunPod is the primary compute platform. Faster than Kaggle P100 (~2.3x), with torch.compile.
+Default GPU: **RTX 3090** (CUDA 12.4, SM 8.6, 24GB, ~$0.32/hr community cloud).
 
-### Single-run mode (pod terminates after each experiment)
+### Normal experiment cycle
 
 ```bash
-# 1. Modify train.py, commit, push
-git add train.py && git commit -m "expNNN: description"
+# 1. Edit train.py → commit → push (pod clones fresh each run)
+git add train.py && git commit -m "exp010: description"
 git push adapters autoresearch/mar26
 
-# 2. Run adapter — creates pod, trains, prints result, terminates pod
+# 2. Run on existing pod (keep-alive mode — saves ~5 min startup per run)
 source .env
-python adapters/runpod/adapter.py
+python adapters/runpod/adapter.py --pod-id POD_ID --no-terminate
 ```
 
-### Keep-alive mode (pod persists across experiments — faster iteration)
+Output includes metrics + WandB URL. On exit, the next-run command is printed.
 
-Skip the ~5 min pod startup/teardown between experiments.
+### First run of a session (create new pod)
 
 ```bash
-# First experiment — create pod, run, keep alive
 source .env
 python adapters/runpod/adapter.py --no-terminate
-# Output: "Next run: python adapters/runpod/adapter.py --pod-id XXXX --no-terminate"
-
-# Subsequent experiments — edit train.py, commit, push, then reuse pod:
-git add train.py && git commit -m "expNNN: description"
-git push adapters autoresearch/mar26
-python adapters/runpod/adapter.py --pod-id XXXX --no-terminate
-
-# When done with session — terminate manually:
-python -c "import runpod,os; runpod.api_key=os.environ['RUNPOD_API_KEY']; runpod.terminate_pod('XXXX')"
+# → prints pod_id and "Next run: python adapters/runpod/adapter.py --pod-id ID --no-terminate"
 ```
 
-**IMPORTANT:** The pod clones the repo fresh each run — always push before running.
+### End of session (terminate pod)
 
-### Config
+```bash
+source .env && python -c "
+import runpod, os
+runpod.api_key = os.environ['RUNPOD_API_KEY']
+runpod.terminate_pod('POD_ID')
+"
+```
 
-- GPU type: `adapters/runpod/pod-config.json` (currently: RTX 3090)
-- Override GPU: `python adapters/runpod/adapter.py --gpu "NVIDIA GeForce RTX 3090"`
-- `RUNPOD_API_KEY` must be in root `.env`
-- Install: `pip install runpod`
-- SSH: uses direct IP:port from RunPod API (not the proxy at ssh.runpod.io — proxy is interactive-only)
+### Flags
 
-### GPU compatibility notes
+| Flag | Effect |
+|------|--------|
+| `--no-terminate` | Keep pod alive after training (use between experiments) |
+| `--pod-id ID` | Reuse existing running pod (skip create + startup) |
+| `--gpu "GPU_NAME"` | Override GPU type (e.g. `"NVIDIA A100 80GB PCIe"`) |
 
-| GPU | SM | CUDA req | Image | Status |
-|-----|----|----------|-------|--------|
-| RTX 3090 | 8.6 | 12.4+ | `runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04` | **working** |
-| RTX 4090 | 8.9 | 12.4+ | same | often unavailable |
-| RTX 5090 | 10.0 | 12.8+ | no RunPod image with CUDA 12.8 confirmed | broken |
-| A100 80GB | 8.0 | 12.4+ | same | works, more expensive |
+### GPU compatibility
 
-- RTX 5090 is NOT usable — requires CUDA 12.8+ and no RunPod image with that version is confirmed
-- RTX 3090 is the recommended default: cheap, available, torch.compile works, 24GB VRAM
+| GPU | Status | Notes |
+|-----|--------|-------|
+| RTX 3090 | **recommended** | SM 8.6, CUDA 12.4, torch.compile ✓, 24GB, cheap |
+| RTX 4090 | works | SM 8.9, often unavailable |
+| A100 80GB | works | SM 8.0, more expensive |
+| RTX 5090 | broken | SM 10.0 needs CUDA 12.8+, no RunPod image confirmed |
+
+Image: `runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04` (set in `pod-config.json`)
+SSH: direct IP:port from RunPod API — **do NOT use `ssh.runpod.io` proxy** (interactive-only, won't work for scripted commands)
+
+### WandB
+
+Runs are automatically logged when `WANDB_API_KEY` is in `.env`.
+Project: https://wandb.ai/kuncevich-andrew-work-andrewk/autoresearch
+The run URL appears in the `---` summary block and adapter output.
 
 ## Kaggle setup
 

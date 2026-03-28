@@ -199,7 +199,7 @@ class GPT(nn.Module):
 # Hyperparameters (edit these directly, no CLI flags needed)
 # ---------------------------------------------------------------------------
 
-DEPTH = 4               # smaller model to maximize step count in the 5 min budget
+DEPTH = 6               # compare with DEPTH=4 (exp009) on RTX 3090
 ASPECT_RATIO = 64       # model_dim = depth * ASPECT_RATIO
 HEAD_DIM = 128          # target head dimension for attention
 TOTAL_BATCH_SIZE = 2**15  # ~32K tokens per step (grad_accum=1, ~370 steps on P100)
@@ -416,6 +416,8 @@ print(f"total_tokens_M:   {total_tokens / 1e6:.1f}")
 print(f"num_steps:        {step}")
 print(f"num_params_M:     {num_params / 1e6:.1f}")
 print(f"depth:            {DEPTH}")
+if WANDB_ENABLED:
+    print(f"wandb_url:        {wandb.run.url}")
 
 # WandB final summary
 if WANDB_ENABLED:
