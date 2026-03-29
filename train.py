@@ -199,7 +199,7 @@ class GPT(nn.Module):
 # Hyperparameters (edit these directly, no CLI flags needed)
 # ---------------------------------------------------------------------------
 
-DEPTH = 6               # compare with DEPTH=4 (exp009) on RTX 3090
+DEPTH = 8               # exp011: bigger model on RTX 3090 (3614 steps was enough for DEPTH=6)
 ASPECT_RATIO = 64       # model_dim = depth * ASPECT_RATIO
 HEAD_DIM = 128          # target head dimension for attention
 TOTAL_BATCH_SIZE = 2**15  # ~32K tokens per step (grad_accum=1, ~370 steps on P100)
