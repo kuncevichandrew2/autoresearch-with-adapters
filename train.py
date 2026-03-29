@@ -203,7 +203,7 @@ DEPTH = 6               # sweet spot on RTX 3090 (~3614 steps, MFU 55%)
 ASPECT_RATIO = 64       # model_dim = depth * ASPECT_RATIO
 HEAD_DIM = 128          # target head dimension for attention
 TOTAL_BATCH_SIZE = 2**15  # ~32K tokens per step (grad_accum=1, ~370 steps on P100)
-LEARNING_RATE = 3e-3    # exp012: higher LR — 3614 steps can tolerate more aggressive schedule
+LEARNING_RATE = 6e-3    # exp013: push LR higher (3e-3 worked well, find the ceiling)
 WEIGHT_DECAY = 0.1      # AdamW weight decay
 ADAM_BETAS = (0.9, 0.95)  # lower beta2: faster adaptation, better for few steps
 WARMUP_RATIO = 0.05     # fraction of time budget for LR warmup
