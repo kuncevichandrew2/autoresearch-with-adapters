@@ -207,7 +207,7 @@ LEARNING_RATE = 3e-3    # best so far (exp012: 3.397)
 WEIGHT_DECAY = 0.1      # AdamW weight decay
 ADAM_BETAS = (0.9, 0.95)  # lower beta2: faster adaptation, better for few steps
 WARMUP_RATIO = 0.05     # fraction of time budget for LR warmup
-WARMDOWN_RATIO = 0.4    # exp014: longer warmdown for better final convergence
+WARMDOWN_RATIO = 0.6    # exp015: even longer warmdown (0.4 helped)
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 DEVICE_BATCH_SIZE = 16  # per-device batch size (reduce if OOM)
 
